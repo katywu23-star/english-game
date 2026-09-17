@@ -1,0 +1,1906 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>英文 5 字母聽說讀寫全方位評量遊戲平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Noto Sans TC', 'Fredoka', sans-serif;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      background: radial-gradient(circle at top, #1e3a8a 0%, #0f172a 100%);
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+    }
+    .canvas-container {
+      position: relative;
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+      border-radius: 28px;
+      overflow: hidden;
+      border: 4px solid rgba(255, 255, 255, 0.2);
+    }
+    #gameCanvas {
+      display: block;
+      background: #ffffff;
+      touch-action: none;
+    }
+  </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-2 md:p-5 text-slate-800">
+
+  <header class="w-full max-w-5xl flex items-center justify-between mb-2 px-2 text-white">
+    <div class="flex items-center gap-2">
+      <span class="text-3xl">🌟</span>
+      <div>
+        <h1 class="text-lg md:text-2xl font-black tracking-wide drop-shadow">英文 5 字母聽說讀寫評量館</h1>
+        <p class="text-xs md:text-sm text-blue-200 font-medium">針對國中資源班設計：聽音、口說、大小寫與手寫全方位評量</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 md:gap-3">
+      <div class="bg-white/20 backdrop-blur-md px-3 py-1.5 md:py-2 rounded-2xl flex items-center gap-1.5 border border-white/30 shadow-inner">
+        <span class="text-cyan-300 font-bold text-xs md:text-sm">本題得分：<span id="roundScoreText" class="text-cyan-300 font-black">+0</span></span>
+      </div>
+      <div class="bg-white/20 backdrop-blur-md px-3 md:px-4 py-1.5 md:py-2 rounded-2xl flex items-center gap-1.5 border border-white/30 shadow-inner">
+        <span class="text-amber-300 text-base md:text-lg">⭐</span>
+        <span class="text-white font-bold text-xs md:text-base">累計總分：<span id="scoreText" class="text-amber-300 font-black">0</span></span>
+      </div>
+    </div>
+  </header>
+
+  <main class="w-full max-w-5xl flex flex-col items-center">
+    <div class="canvas-container w-full bg-white relative">
+      <canvas id="gameCanvas"></canvas>
+    </div>
+  </main>
+
+  <footer class="mt-2 text-center text-blue-200 text-xs">
+    💡 教學指引：每輪 10 題評量，僅首次作答採計分數；口說支援麥克風與教師手動判定，書寫支援手指與觸控筆。
+  </footer>
+
+  <script>
+    const VIRTUAL_WIDTH = 940;
+    const VIRTUAL_HEIGHT = 650;
+
+    // 5 個核心評量字母題庫（擴充口說辨識諧音別名庫）
+    const quizData = [
+      { 
+        letter: "A", lowercase: "a", phonics: "æ", word: "Apple", icon: "🍎",
+        spokenAliases: ["a", "ay", "apple", "ei", "hey", "8", "eight", "eh", "欸", "诶"],
+        missingPart: { desc: "缺少中間一橫", hintType: "crossbar" } 
+      },
+      { 
+        letter: "B", lowercase: "b", phonics: "b", word: "Ball", icon: "⚽",
+        spokenAliases: ["b", "bee", "ball", "be", "beat", "boy", "逼", "比"],
+        missingPart: { desc: "缺少下方的圓肚肚", hintType: "bottomLoop" } 
+      },
+      { 
+        letter: "C", lowercase: "c", phonics: "k", word: "Cat", icon: "🐱",
+        spokenAliases: ["c", "see", "sea", "cat", "si", "say", "吸", "西"],
+        missingPart: { desc: "缺了右上弧線", hintType: "topCurve" } 
+      },
+      { 
+        letter: "D", lowercase: "d", phonics: "d", word: "Dog", icon: "🐶",
+        spokenAliases: ["d", "dee", "dog", "di", "day", "door", "低", "第"],
+        missingPart: { desc: "缺了右側大半圓", hintType: "rightArc" } 
+      },
+      { 
+        letter: "E", lowercase: "e", phonics: "e", word: "Egg", icon: "🥚",
+        spokenAliases: ["e", "egg", "ee", "yi", "eat", "elephant", "依", "一"],
+        missingPart: { desc: "缺少中間的橫線", hintType: "midBar" } 
+      }
+    ];
+
+    // 四大核心能力模組
+    let currentSkill = 'listening'; // 'listening' | 'speaking' | 'reading' | 'writing'
+    let currentGameIndex = 0;       // 0, 1, 2
+    let score = 0;
+    let lastEarnedScore = 0;
+    let currentTarget = quizData[0];
+    let clickTargets = [];
+    let messageToast = null;
+    let particles = [];
+    let animationFrameId = null;
+
+    // 10 題回合評量管理
+    const MAX_ROUNDS = 10;
+    let currentRound = 1;
+    let correctCount = 0;
+    let isGameOver = false;
+    let hasAnsweredCurrentRound = false;
+
+    // 聽力小遊戲專屬狀態變數
+    let balloons = [];
+    let phonicsRevealed = false;
+    let phonicsUserSelected = null;
+    let cartDrops = [];
+    const cartWidth = 130;
+    const cartHeight = 45;
+    let cartX = VIRTUAL_WIDTH / 2 - cartWidth / 2;
+    let dropSpawnTimer = 0;
+
+    // 閱讀小遊戲專屬狀態變數
+    let memoryCards = [];
+    let flippedCards = [];
+    let memoryLock = false;
+    let matchedPairsCount = 0;
+    let spaceMeteors = [];
+    let meteorTimer = 0;
+    let meteorTargetIsUpper = true;
+
+    // 口說小遊戲專屬狀態變數
+    let isListeningSpeech = false;
+    let speechTranscript = "點擊下方麥克風，大聲唸出！";
+    let speechRecognition = null;
+    let raceCarProgress = 0; // 0 ~ 100%
+    let speechMode = 'recognition'; // 'recognition' (語音轉文字) | 'volume' (大聲發音感應)
+    let audioStream = null;
+    let audioAnalyser = null;
+    let micVolumeLevel = 0; // 0 ~ 100
+    let volumeTriggerTimer = 0;
+    const isFileProtocol = (window.location.protocol === 'file:');
+
+    // 書寫小遊戲專屬狀態變數（畫布筆跡）
+    let drawnStrokes = []; // 筆劃紀錄 [{color, width, points: [{x, y}]}]
+    let isDrawing = false;
+    let showGuideTemplate = true;
+    let revealBlindAnswer = false;
+    let currentColor = '#2563eb';
+    let writingTargetIsUpper = true;
+    const writeArea = { x: 270, y: 195, w: 400, h: 290 };
+
+    // 離線字形比對畫布 (用以演算法比對筆劃重疊度)
+    const hitCanvas = document.createElement('canvas');
+    hitCanvas.width = writeArea.w;
+    hitCanvas.height = writeArea.h;
+    const hitCtx = hitCanvas.getContext('2d');
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreDisplay = document.getElementById('scoreText');
+    const roundScoreDisplay = document.getElementById('roundScoreText');
+
+    let audioCtx = null;
+    function getAudioContext() {
+      if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) audioCtx = new AudioContext();
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    function playTone(type) {
+      try {
+        const aCtx = getAudioContext();
+        if (!aCtx) return;
+        const now = aCtx.currentTime;
+
+        if (type === 'click') {
+          const osc = aCtx.createOscillator();
+          const gain = aCtx.createGain();
+          osc.connect(gain);
+          gain.connect(aCtx.destination);
+          osc.frequency.setValueAtTime(450, now);
+          gain.gain.setValueAtTime(0.08, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+          osc.start(now);
+          osc.stop(now + 0.08);
+        } else if (type === 'correct') {
+          [523.25, 659.25, 783.99].forEach((freq, idx) => {
+            const osc = aCtx.createOscillator();
+            const gain = aCtx.createGain();
+            osc.connect(gain);
+            gain.connect(aCtx.destination);
+            osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+            gain.gain.setValueAtTime(0.12, now + idx * 0.08);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.25);
+            osc.start(now + idx * 0.08);
+            osc.stop(now + idx * 0.08 + 0.25);
+          });
+        } else if (type === 'wrong') {
+          const osc = aCtx.createOscillator();
+          const gain = aCtx.createGain();
+          osc.connect(gain);
+          gain.connect(aCtx.destination);
+          osc.frequency.setValueAtTime(260, now);
+          osc.frequency.setValueAtTime(195, now + 0.12);
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+          osc.start(now);
+          osc.stop(now + 0.28);
+        } else if (type === 'fanfare') {
+          [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+            const osc = aCtx.createOscillator();
+            const gain = aCtx.createGain();
+            osc.connect(gain);
+            gain.connect(aCtx.destination);
+            osc.frequency.setValueAtTime(freq, now + idx * 0.12);
+            gain.gain.setValueAtTime(0.15, now + idx * 0.12);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.12 + 0.35);
+            osc.start(now + idx * 0.12);
+            osc.stop(now + idx * 0.12 + 0.35);
+          });
+        }
+      } catch (err) {
+        console.warn('Audio play issue:', err);
+      }
+    }
+
+    function speak(text, rate = 0.82) {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      utterance.rate = rate;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    // 初始化麥克風音量感應（免依賴 Google 伺服器的離線/資源班備援神器）
+    async function initVolumeSensing() {
+      try {
+        if (!audioStream) {
+          audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
+        const aCtx = getAudioContext();
+        if (!aCtx) return;
+        const source = aCtx.createMediaStreamSource(audioStream);
+        audioAnalyser = aCtx.createAnalyser();
+        audioAnalyser.fftSize = 256;
+        source.connect(audioAnalyser);
+        monitorVolume();
+      } catch (err) {
+        console.warn('Volume sensing mic access issue:', err);
+      }
+    }
+
+    function monitorVolume() {
+      if (!audioAnalyser || !isListeningSpeech) {
+        micVolumeLevel = 0;
+        return;
+      }
+      const buffer = new Uint8Array(audioAnalyser.frequencyBinCount);
+      audioAnalyser.getByteFrequencyData(buffer);
+      let sum = 0;
+      for (let i = 0; i < buffer.length; i++) sum += buffer[i];
+      const avg = sum / buffer.length;
+      micVolumeLevel = Math.min(100, Math.round((avg / 128) * 100));
+
+      // 若在「大聲發音感應模式」或作為辨識備援：音量超過 28 即判定學生有大聲發音
+      if (micVolumeLevel > 28) {
+        volumeTriggerTimer++;
+        if (volumeTriggerTimer >= 8) { // 連續維持發音約 0.2 秒
+          speechTranscript = `檢測到發音！音量：${micVolumeLevel}%`;
+          if (currentSkill === 'speaking' && currentGameIndex === 2) {
+            raceCarProgress = Math.min(100, raceCarProgress + 10);
+          }
+          processAnswer(true);
+          volumeTriggerTimer = 0;
+          stopListening();
+          return;
+        }
+      } else {
+        volumeTriggerTimer = Math.max(0, volumeTriggerTimer - 1);
+      }
+
+      if (isListeningSpeech) {
+        requestAnimationFrame(monitorVolume);
+      }
+    }
+
+    // 初始化語音辨識（每次建立全新實例，避免狀態死鎖）
+    function createSpeechRecognitionInstance() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) return null;
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-US';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 5;
+
+      recognition.onstart = () => {
+        isListeningSpeech = true;
+        speechTranscript = "🎙️ 正在聆聽中... 請大聲唸出！";
+        initVolumeSensing();
+      };
+
+      recognition.onresult = (event) => {
+        let bestTranscript = "";
+        for (let i = 0; i < event.results.length; i++) {
+          for (let j = 0; j < event.results[i].length; j++) {
+            const candidate = event.results[i][j].transcript.trim().toLowerCase();
+            if (candidate) {
+              bestTranscript = candidate;
+              if (verifySpokenText(candidate)) {
+                speechTranscript = `辨識成功：「${candidate}」✓`;
+                handleSpeechVerification(candidate);
+                stopListening();
+                return;
+              }
+            }
+          }
+        }
+        speechTranscript = `聽到：「${bestTranscript || '...'}」`;
+      };
+
+      recognition.onerror = (event) => {
+        console.warn('SpeechRecognition error:', event.error);
+        if (event.error === 'not-allowed') {
+          speechTranscript = "⚠️ 麥克風未授權，可切換「大聲感應」或由老師核可！";
+        } else if (event.error === 'network') {
+          speechTranscript = "⚠️ 雲端辨識網路受限，已自動改用音量感應！";
+          speechMode = 'volume';
+        }
+        stopListening();
+      };
+
+      recognition.onend = () => {
+        isListeningSpeech = false;
+      };
+
+      return recognition;
+    }
+
+    function verifySpokenText(spoken) {
+      const s = spoken.toLowerCase();
+      const targetLetter = currentTarget.letter.toLowerCase();
+      const targetWord = currentTarget.word.toLowerCase();
+      if (s.includes(targetLetter) || s.startsWith(targetLetter)) return true;
+      if (s.includes(targetWord)) return true;
+      if (currentTarget.spokenAliases && currentTarget.spokenAliases.some(alias => s.includes(alias.toLowerCase()))) {
+        return true;
+      }
+      return false;
+    }
+
+    function toggleListening() {
+      if (isListeningSpeech) {
+        stopListening();
+        return;
+      }
+
+      isListeningSpeech = true;
+      volumeTriggerTimer = 0;
+      initVolumeSensing();
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition && !isFileProtocol && speechMode === 'recognition') {
+        try {
+          if (speechRecognition) {
+            try { speechRecognition.abort(); } catch (_) {}
+          }
+          speechRecognition = createSpeechRecognitionInstance();
+          speechRecognition.start();
+        } catch (e) {
+          console.warn('Fallback to volume sensing:', e);
+          speechTranscript = "🎙️ 請對著麥克風大聲唸出！";
+        }
+      } else {
+        speechTranscript = isFileProtocol 
+          ? "💡 本機模式以「大聲發音感應」運作，請大聲唸！" 
+          : "🎙️ 大聲發音感應啟動中，請大聲唸！";
+      }
+    }
+
+    function stopListening() {
+      isListeningSpeech = false;
+      if (speechRecognition) {
+        try { speechRecognition.abort(); } catch (_) {}
+      }
+    }
+
+    function stopSpeechRecognitionIfActive() {
+      stopListening();
+    }
+
+    function handleSpeechVerification(spoken) {
+      const isCorrect = verifySpokenText(spoken);
+      if (isCorrect) {
+        if (currentSkill === 'speaking' && currentGameIndex === 2) {
+          raceCarProgress = Math.min(100, raceCarProgress + 10);
+        }
+        processAnswer(true);
+      } else {
+        processAnswer(false);
+      }
+    }
+
+    function resizeCanvas() {
+      const container = canvas.parentElement;
+      if (!container) return;
+      const containerWidth = container.clientWidth;
+      const aspect = VIRTUAL_HEIGHT / VIRTUAL_WIDTH;
+      const displayWidth = containerWidth;
+      const displayHeight = containerWidth * aspect;
+
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = VIRTUAL_WIDTH * dpr;
+      canvas.height = VIRTUAL_HEIGHT * dpr;
+      canvas.style.width = `${displayWidth}px`;
+      canvas.style.height = `${displayHeight}px`;
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    function updateScoreUI(earned = null) {
+      if (earned !== null) {
+        lastEarnedScore = earned;
+        roundScoreDisplay.innerText = (earned >= 0 ? `+${earned}` : `${earned}`);
+      }
+      scoreDisplay.innerText = score;
+    }
+
+    function startNewGameSession() {
+      stopSpeechRecognitionIfActive();
+      score = 0;
+      currentRound = 1;
+      correctCount = 0;
+      isGameOver = false;
+      hasAnsweredCurrentRound = false;
+      raceCarProgress = 0;
+      updateScoreUI(0);
+      pickNewTarget();
+    }
+
+    function pickNewTarget() {
+      stopSpeechRecognitionIfActive();
+      const randomIndex = Math.floor(Math.random() * quizData.length);
+      currentTarget = quizData[randomIndex];
+      phonicsRevealed = false;
+      phonicsUserSelected = null;
+      hasAnsweredCurrentRound = false;
+      speechTranscript = "點擊下方麥克風，大聲唸出！";
+      drawnStrokes = [];
+      revealBlindAnswer = false;
+      showGuideTemplate = (currentGameIndex === 0);
+      meteorTargetIsUpper = Math.random() < 0.5;
+      writingTargetIsUpper = Math.random() < 0.5;
+      initGameSpecificElements();
+    }
+
+    function initGameSpecificElements() {
+      if (currentSkill === 'listening' && currentGameIndex === 0) {
+        balloons = quizData.map((item, i) => ({
+          letter: item.letter,
+          x: 110 + i * 175,
+          baseY: 420,
+          floatOffset: Math.random() * Math.PI * 2,
+          radiusX: 54,
+          radiusY: 68,
+          color: ['#f43f5e', '#06b6d4', '#8b5cf6', '#10b981', '#f59e0b'][i % 5]
+        }));
+      }
+
+      if (currentSkill === 'listening' && currentGameIndex === 2) {
+        cartDrops = [];
+        dropSpawnTimer = 0;
+        cartX = VIRTUAL_WIDTH / 2 - cartWidth / 2;
+        spawnCartDrop();
+      }
+
+      if (currentSkill === 'reading' && currentGameIndex === 0) {
+        initMemoryGame();
+      }
+
+      if (currentSkill === 'reading' && currentGameIndex === 2) {
+        spaceMeteors = [];
+        meteorTimer = 0;
+        spawnMeteor();
+      }
+    }
+
+    function initMemoryGame() {
+      let cards = [];
+      quizData.forEach((q, idx) => {
+        cards.push({ id: idx * 2, pairId: idx, char: q.letter, isUpper: true, isFlipped: false, isMatched: false });
+        cards.push({ id: idx * 2 + 1, pairId: idx, char: q.lowercase, isUpper: false, isFlipped: false, isMatched: false });
+      });
+      cards.sort(() => Math.random() - 0.5);
+      memoryCards = cards;
+      flippedCards = [];
+      memoryLock = false;
+      matchedPairsCount = 0;
+    }
+
+    function spawnCartDrop() {
+      const isTarget = Math.random() < 0.45;
+      const dropItem = isTarget ? currentTarget : quizData[Math.floor(Math.random() * quizData.length)];
+      cartDrops.push({
+        letter: dropItem.letter,
+        x: 130 + Math.random() * (VIRTUAL_WIDTH - 260),
+        y: 270,
+        vy: 1.5 + Math.random() * 0.8,
+        radius: 36,
+        color: ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'][Math.floor(Math.random() * 5)]
+      });
+    }
+
+    function spawnMeteor() {
+      const isTarget = Math.random() < 0.5;
+      const item = isTarget ? currentTarget : quizData[Math.floor(Math.random() * quizData.length)];
+      const displayChar = meteorTargetIsUpper ? item.letter : item.lowercase;
+      spaceMeteors.push({
+        letter: displayChar,
+        x: 120 + Math.random() * (VIRTUAL_WIDTH - 240),
+        y: 270,
+        vy: 1.3 + Math.random() * 0.7,
+        radius: 36,
+        color: ['#0284c7', '#7c3aed', '#db2777', '#059669', '#d97706'][Math.floor(Math.random() * 5)]
+      });
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
+      clickTargets = [];
+
+      drawNavigation();
+
+      if (isGameOver) {
+        drawAssessmentReport();
+      } else {
+        drawRoundBadge();
+
+        if (currentSkill === 'listening') {
+          if (currentGameIndex === 0) drawListeningGame1();
+          else if (currentGameIndex === 1) drawListeningGame2();
+          else if (currentGameIndex === 2) drawListeningGame3();
+        } else if (currentSkill === 'speaking') {
+          if (currentGameIndex === 0) drawSpeakingGame1();
+          else if (currentGameIndex === 1) drawSpeakingGame2();
+          else if (currentGameIndex === 2) drawSpeakingGame3();
+        } else if (currentSkill === 'reading') {
+          if (currentGameIndex === 0) drawReadingGame1();
+          else if (currentGameIndex === 1) drawReadingGame2();
+          else if (currentGameIndex === 2) drawReadingGame3();
+        } else if (currentSkill === 'writing') {
+          if (currentGameIndex === 0) drawWritingGame1();
+          else if (currentGameIndex === 1) drawWritingGame2();
+          else if (currentGameIndex === 2) drawWritingGame3();
+        }
+      }
+
+      updateAndDrawParticles();
+      drawFeedbackToast();
+
+      animationFrameId = requestAnimationFrame(draw);
+    }
+
+    function drawNavigation() {
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 0, VIRTUAL_WIDTH, 132);
+
+      const skillButtons = [
+        { id: 'listening', label: '🎧 聽力評量', color: '#3b82f6' },
+        { id: 'speaking',  label: '🗣️ 口說評量', color: '#f59e0b' },
+        { id: 'reading',   label: '📖 閱讀評量', color: '#8b5cf6' },
+        { id: 'writing',   label: '✍️ 書寫評量', color: '#10b981' }
+      ];
+
+      skillButtons.forEach((sb, i) => {
+        const x = 35 + i * 220;
+        drawPillButton(x, 15, 205, 46, sb.label, currentSkill === sb.id, sb.color, () => {
+          playTone('click');
+          currentSkill = sb.id;
+          currentGameIndex = 0;
+          startNewGameSession();
+        });
+      });
+
+      let subGames = [];
+      if (currentSkill === 'listening') {
+        subGames = ['① 氣球聽音戳戳樂', '② 音素聽音辨字', '③ 字母採購車'];
+      } else if (currentSkill === 'speaking') {
+        subGames = ['① 魔法麥克風', '② Phonics 大挑戰', '③ 聲控賽車衝衝衝'];
+      } else if (currentSkill === 'reading') {
+        subGames = ['① 翻牌記憶對對碰', '② 字母形體偵探', '③ 字母星際降落'];
+      } else if (currentSkill === 'writing') {
+        subGames = ['① 筆順描紅板', '② 盲寫記憶考驗', '③ 字母缺筆補完師'];
+      }
+
+      subGames.forEach((title, i) => {
+        const isCurrent = (currentGameIndex === i);
+        const bx = 35 + i * 295;
+        const by = 78;
+        drawSubNavButton(bx, by, 275, 40, title, isCurrent, () => {
+          playTone('click');
+          currentGameIndex = i;
+          startNewGameSession();
+        });
+      });
+
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 132);
+      ctx.lineTo(VIRTUAL_WIDTH, 132);
+      ctx.stroke();
+    }
+
+    function drawRoundBadge() {
+      ctx.save();
+      ctx.fillStyle = '#eff6ff';
+      ctx.strokeStyle = '#bfdbfe';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(35, 142, 135, 32, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#1d4ed8';
+      ctx.font = 'bold 14px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`題數：${currentRound} / ${MAX_ROUNDS}`, 102, 158);
+
+      ctx.fillStyle = hasAnsweredCurrentRound ? '#10b981' : '#f59e0b';
+      ctx.beginPath();
+      ctx.roundRect(185, 142, 165, 32, 10);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px "Noto Sans TC", sans-serif';
+      ctx.fillText(hasAnsweredCurrentRound ? '✓ 已完成本題作答' : '💡 首次作答採計分數', 267, 158);
+      ctx.restore();
+    }
+
+    function drawPillButton(x, y, w, h, text, isActive, activeColor, onClick) {
+      ctx.save();
+      ctx.fillStyle = isActive ? activeColor : '#e2e8f0';
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 23);
+      ctx.fill();
+
+      ctx.fillStyle = isActive ? '#ffffff' : '#475569';
+      ctx.font = 'bold 16px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x + w / 2, y + h / 2);
+      ctx.restore();
+
+      clickTargets.push({ x, y, w, h, action: onClick });
+    }
+
+    function drawSubNavButton(x, y, w, h, text, isActive, onClick) {
+      ctx.save();
+      ctx.fillStyle = isActive ? '#f0fdf4' : '#ffffff';
+      ctx.strokeStyle = isActive ? '#10b981' : '#cbd5e1';
+      ctx.lineWidth = isActive ? 2 : 1.5;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 14);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = isActive ? '#059669' : '#64748b';
+      ctx.font = 'bold 15px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x + w / 2, y + h / 2);
+      ctx.restore();
+
+      clickTargets.push({ x, y, w, h, action: onClick });
+    }
+
+    function drawGameHeader(title, desc) {
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 23px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(title, VIRTUAL_WIDTH / 2, 165);
+
+      ctx.fillStyle = '#64748b';
+      ctx.font = '500 14px "Noto Sans TC", sans-serif';
+      ctx.fillText(desc, VIRTUAL_WIDTH / 2, 192);
+    }
+
+    function drawSoundButton(x, y, w, h, text, onPlay) {
+      ctx.save();
+      ctx.fillStyle = '#3b82f6';
+      ctx.shadowColor = 'rgba(59, 130, 246, 0.35)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 3;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 16);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 17px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x + w / 2, y + h / 2);
+      ctx.restore();
+
+      clickTargets.push({ x, y, w, h, action: onPlay });
+    }
+
+    function drawButton(x, y, w, h, text, color, onClick) {
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.shadowColor = 'rgba(0,0,0,0.15)';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 16);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 17px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x + w / 2, y + h / 2);
+      ctx.restore();
+
+      clickTargets.push({ x, y, w, h, action: onClick });
+    }
+
+    function drawQuestionFooterControls(audioCallback, nextLabel = '前往下一題 ➔') {
+      const btnY = 575;
+      drawSoundButton(VIRTUAL_WIDTH / 2 - 210, btnY, 190, 44, '🔊 再聽一次', audioCallback);
+
+      const nextBtnColor = hasAnsweredCurrentRound ? '#10b981' : '#64748b';
+      drawButton(VIRTUAL_WIDTH / 2 + 20, btnY, 190, 44, nextLabel, nextBtnColor, () => {
+        if (!hasAnsweredCurrentRound) {
+          showFeedbackToast('⚠️ 本題尚未作答，以 0 分計入並前進！', false);
+          processAnswer(false, true);
+        } else {
+          advanceRound();
+        }
+      });
+    }
+
+    function drawListeningGame1() {
+      drawGameHeader('🎈 氣球聽音戳戳樂', '先聽發音，然後點擊正確字母的漂浮氣球！（僅首次作答算分）');
+      drawSoundButton(VIRTUAL_WIDTH / 2 - 110, 208, 220, 42, '🔊 點擊聆聽發音', () => {
+        speak(currentTarget.letter, 0.8);
+      });
+
+      const time = Date.now() * 0.003;
+      balloons.forEach((b) => {
+        const floatY = b.baseY + Math.sin(time + b.floatOffset) * 16 - 20;
+
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(b.x, floatY + b.radiusY);
+        ctx.quadraticCurveTo(b.x + 8, floatY + b.radiusY + 35, b.x, floatY + b.radiusY + 55);
+        ctx.stroke();
+
+        ctx.save();
+        ctx.fillStyle = b.color;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.ellipse(b.x, floatY, b.radiusX, b.radiusY, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.beginPath();
+        ctx.ellipse(b.x - 16, floatY - 22, 12, 18, -Math.PI / 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 44px "Fredoka", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(b.letter, b.x, floatY);
+        ctx.restore();
+
+        clickTargets.push({
+          x: b.x - b.radiusX,
+          y: floatY - b.radiusY,
+          w: b.radiusX * 2,
+          h: b.radiusY * 2,
+          action: () => processAnswer(b.letter === currentTarget.letter)
+        });
+      });
+
+      drawQuestionFooterControls(() => speak(currentTarget.letter, 0.8));
+    }
+
+    function drawListeningGame2() {
+      drawGameHeader('🔊 音素聽音辨字', '仔細聽開頭自然發音選出字母；作答後系統將揭曉單字！');
+
+      if (!phonicsRevealed) {
+        drawSoundButton(VIRTUAL_WIDTH / 2 - 130, 215, 260, 46, '🔊 點擊聆聽單字發音', () => {
+          speak(currentTarget.word, 0.75);
+        });
+
+        const boxW = 125;
+        const boxH = 125;
+        const gap = 30;
+        const startX = (VIRTUAL_WIDTH - (5 * boxW + 4 * gap)) / 2;
+
+        quizData.forEach((item, i) => {
+          const x = startX + i * (boxW + gap);
+          const y = 305;
+
+          ctx.save();
+          ctx.fillStyle = '#ffffff';
+          ctx.strokeStyle = '#e2e8f0';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.roundRect(x, y, boxW, boxH, 20);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#1e293b';
+          ctx.font = 'bold 48px "Fredoka", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(item.letter, x + boxW / 2, y + boxH / 2);
+          ctx.restore();
+
+          clickTargets.push({
+            x, y, w: boxW, h: boxH,
+            action: () => {
+              phonicsRevealed = true;
+              phonicsUserSelected = item.letter;
+              const isCorrect = (item.letter === currentTarget.letter);
+              processAnswer(isCorrect);
+              speak(`${currentTarget.letter}, ${currentTarget.word}`);
+            }
+          });
+        });
+
+        drawQuestionFooterControls(() => speak(currentTarget.word, 0.75));
+      } else {
+        const cardW = 580;
+        const cardH = 220;
+        const cardX = (VIRTUAL_WIDTH - cardW) / 2;
+        const cardY = 220;
+
+        ctx.save();
+        ctx.fillStyle = '#f0fdf4';
+        ctx.strokeStyle = '#86efac';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(cardX, cardY, cardW, cardH, 24);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#166534';
+        ctx.font = 'bold 22px "Noto Sans TC", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`🎉 正確解答：【 ${currentTarget.letter} 】 字母`, cardX + cardW / 2, cardY + 45);
+
+        ctx.font = 'bold 46px "Fredoka", sans-serif';
+        ctx.fillStyle = '#0f172a';
+        ctx.fillText(`${currentTarget.icon} ${currentTarget.word}  [ /${currentTarget.phonics}/ ]`, cardX + cardW / 2, cardY + 115);
+
+        ctx.font = '500 16px "Noto Sans TC", sans-serif';
+        ctx.fillStyle = '#475569';
+        ctx.fillText(`您的選擇：${phonicsUserSelected} (${phonicsUserSelected === currentTarget.letter ? '正確 ✓' : '錯誤 ✗'})`, cardX + cardW / 2, cardY + 165);
+        ctx.restore();
+
+        drawSoundButton(cardX + 50, cardY + cardH + 25, 210, 46, '🔊 再聽一次單字', () => {
+          speak(`${currentTarget.letter} for ${currentTarget.word}`);
+        });
+
+        drawButton(cardX + 310, cardY + cardH + 25, 220, 46, '前往下一題 ➔', '#10b981', () => {
+          advanceRound();
+        });
+      }
+    }
+
+    function drawListeningGame3() {
+      drawGameHeader('🛒 字母聽音採購車', '聽發音，移動推車接住正確掉落的字母！（僅首次接中算分）');
+      drawSoundButton(VIRTUAL_WIDTH / 2 - 110, 205, 220, 40, '🔊 重播目標發音', () => {
+        speak(currentTarget.letter, 0.85);
+      });
+
+      dropSpawnTimer++;
+      if (dropSpawnTimer % 80 === 0 && cartDrops.length < 4) {
+        spawnCartDrop();
+      }
+
+      const cartY = 505;
+      drawCartArrowButton(60, cartY - 5, 80, 48, '◀ 往左', () => {
+        cartX = Math.max(50, cartX - 60);
+      });
+      drawCartArrowButton(VIRTUAL_WIDTH - 140, cartY - 5, 80, 48, '往右 ▶', () => {
+        cartX = Math.min(VIRTUAL_WIDTH - cartWidth - 50, cartX + 60);
+      });
+
+      for (let i = cartDrops.length - 1; i >= 0; i--) {
+        const drop = cartDrops[i];
+        drop.y += drop.vy;
+
+        ctx.save();
+        ctx.fillStyle = drop.color;
+        ctx.beginPath();
+        ctx.arc(drop.x, drop.y, drop.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 36px "Fredoka", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(drop.letter, drop.x, drop.y);
+        ctx.restore();
+
+        if (drop.y + drop.radius >= cartY && drop.y - drop.radius <= cartY + cartHeight) {
+          if (drop.x >= cartX - 10 && drop.x <= cartX + cartWidth + 10) {
+            const caughtLetter = drop.letter;
+            cartDrops.splice(i, 1);
+            processAnswer(caughtLetter === currentTarget.letter);
+            continue;
+          }
+        }
+
+        if (drop.y > cartY + 45) {
+          cartDrops.splice(i, 1);
+        }
+      }
+
+      ctx.save();
+      ctx.fillStyle = '#0284c7';
+      ctx.beginPath();
+      ctx.roundRect(cartX, cartY, cartWidth, cartHeight, 14);
+      ctx.fill();
+
+      ctx.fillStyle = '#1e293b';
+      ctx.beginPath();
+      ctx.arc(cartX + 25, cartY + cartHeight + 6, 8, 0, Math.PI * 2);
+      ctx.arc(cartX + cartWidth - 25, cartY + cartHeight + 6, 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 17px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🛒 接字母', cartX + cartWidth / 2, cartY + cartHeight / 2);
+      ctx.restore();
+
+      drawQuestionFooterControls(() => speak(currentTarget.letter, 0.85));
+    }
+
+    function drawCartArrowButton(x, y, w, h, text, onClick) {
+      ctx.save();
+      ctx.fillStyle = '#f1f5f9';
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 14);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 16px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x + w / 2, y + h / 2);
+      ctx.restore();
+
+      clickTargets.push({ x, y, w, h, action: onClick });
+    }
+
+    function drawSpeakingGame1() {
+      drawGameHeader('🎙️ 字母魔法麥克風', '看著螢幕上的字母，大聲唸出！(支援語音轉文字與發音聲控感應)');
+
+      // 本機 file:// 模式友善提醒
+      if (isFileProtocol) {
+        drawNoticeBanner('💡 目前為本機檔案 (file://)，瀏覽器限制雲端辨識，系統已自動啟用「大聲發音感測」！');
+      }
+
+      const cardW = 380;
+      const cardH = 240;
+      const cardX = (VIRTUAL_WIDTH - cardW) / 2;
+      const cardY = 205;
+
+      ctx.save();
+      ctx.fillStyle = '#fef3c7';
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.roundRect(cardX, cardY, cardW, cardH, 24);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#b45309';
+      ctx.font = 'bold 18px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('請朗讀目標字母', cardX + cardW / 2, cardY + 36);
+
+      ctx.fillStyle = '#d97706';
+      ctx.font = 'bold 96px "Fredoka", sans-serif';
+      ctx.fillText(currentTarget.letter, cardX + cardW / 2, cardY + 140);
+
+      // 音量即時波形條
+      if (isListeningSpeech) {
+        ctx.fillStyle = '#e2e8f0';
+        ctx.beginPath();
+        ctx.roundRect(cardX + 60, cardY + 165, cardW - 120, 10, 5);
+        ctx.fill();
+
+        ctx.fillStyle = micVolumeLevel > 28 ? '#10b981' : '#f59e0b';
+        ctx.beginPath();
+        ctx.roundRect(cardX + 60, cardY + 165, (cardW - 120) * (micVolumeLevel / 100), 10, 5);
+        ctx.fill();
+      }
+
+      ctx.font = 'bold 16px "Noto Sans TC", sans-serif';
+      ctx.fillStyle = '#92400e';
+      ctx.fillText(speechTranscript, cardX + cardW / 2, cardY + 205);
+      ctx.restore();
+
+      const micBtnColor = isListeningSpeech ? '#ef4444' : '#f59e0b';
+      const micText = isListeningSpeech ? '🛑 停止收音' : '🎤 點擊開始收音辨識';
+      drawButton(cardX + 20, cardY + cardH + 18, 340, 46, micText, micBtnColor, () => {
+        toggleListening();
+      });
+
+      // 教師手動過關按鈕（保留雙保險）
+      drawButton(cardX + 20, cardY + cardH + 72, 340, 36, '👨‍🏫 老師手動核可 (+10分)', '#059669', () => {
+        processAnswer(true);
+      });
+
+      drawQuestionFooterControls(() => speak(currentTarget.letter, 0.8));
+    }
+
+    function drawSpeakingGame2() {
+      drawGameHeader('⚡ Phonics 自然發音大挑戰', '先聽聽示範，再唸出單字開頭的自然發音或單字！');
+
+      if (isFileProtocol) {
+        drawNoticeBanner('💡 目前為本機模式，系統啟用「發音音量感測」，大聲唸出即可過關！');
+      }
+
+      const cardW = 460;
+      const cardH = 240;
+      const cardX = (VIRTUAL_WIDTH - cardW) / 2;
+      const cardY = 205;
+
+      ctx.save();
+      ctx.fillStyle = '#eff6ff';
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.roundRect(cardX, cardY, cardW, cardH, 24);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#1e40af';
+      ctx.font = 'bold 18px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`字母 ${currentTarget.letter} 的發音是 [ /${currentTarget.phonics}/ ]`, cardX + cardW / 2, cardY + 38);
+
+      ctx.font = 'bold 48px "Fredoka", sans-serif';
+      ctx.fillStyle = '#1d4ed8';
+      ctx.fillText(`${currentTarget.icon} ${currentTarget.word}`, cardX + cardW / 2, cardY + 118);
+
+      // 音量波形條
+      if (isListeningSpeech) {
+        ctx.fillStyle = '#cbd5e1';
+        ctx.beginPath();
+        ctx.roundRect(cardX + 80, cardY + 155, cardW - 160, 8, 4);
+        ctx.fill();
+
+        ctx.fillStyle = micVolumeLevel > 28 ? '#10b981' : '#3b82f6';
+        ctx.beginPath();
+        ctx.roundRect(cardX + 80, cardY + 155, (cardW - 160) * (micVolumeLevel / 100), 8, 4);
+        ctx.fill();
+      }
+
+      ctx.font = 'bold 16px "Noto Sans TC", sans-serif';
+      ctx.fillStyle = '#2563eb';
+      ctx.fillText(speechTranscript, cardX + cardW / 2, cardY + 195);
+      ctx.restore();
+
+      drawButton(cardX + 20, cardY + cardH + 18, 200, 46, '🔊 聽示範音', () => {
+        speak(`${currentTarget.letter}, /${currentTarget.phonics}/, ${currentTarget.word}`);
+      });
+
+      const mic2Text = isListeningSpeech ? '🛑 停止收音' : '🎤 開始唸出';
+      const mic2Color = isListeningSpeech ? '#ef4444' : '#f59e0b';
+      drawButton(cardX + 240, cardY + cardH + 18, 200, 46, mic2Text, mic2Color, () => {
+        toggleListening();
+      });
+
+      drawButton(cardX + 100, cardY + cardH + 72, 260, 36, '👨‍🏫 老師手動核可 (+10分)', '#059669', () => {
+        processAnswer(true);
+      });
+
+      drawQuestionFooterControls(() => speak(currentTarget.word));
+    }
+
+    function drawSpeakingGame3() {
+      drawGameHeader('🏎️ 聲控賽車衝衝衝', '大聲唸出目標字母，為賽車補給能量向前奔馳！');
+
+      const trackX = 100;
+      const trackY = 210;
+      const trackW = 740;
+      const trackH = 95;
+
+      ctx.save();
+      ctx.fillStyle = '#334155';
+      ctx.beginPath();
+      ctx.roundRect(trackX, trackY, trackW, trackH, 20);
+      ctx.fill();
+
+      // 跑道標線
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([20, 15]);
+      ctx.beginPath();
+      ctx.moveTo(trackX + 15, trackY + trackH / 2);
+      ctx.lineTo(trackX + trackW - 15, trackY + trackH / 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 終點標示
+      ctx.fillStyle = '#f87171';
+      ctx.fillRect(trackX + trackW - 25, trackY + 10, 15, trackH - 20);
+
+      // 賽車
+      const carX = trackX + 20 + (trackW - 100) * (raceCarProgress / 100);
+      const carY = trackY + trackH / 2;
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.roundRect(carX, carY - 20, 65, 40, 10);
+      ctx.fill();
+
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(carX + 15, carY + 22, 9, 0, Math.PI * 2);
+      ctx.arc(carX + 50, carY + 22, 9, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 16px "Fredoka", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('🏎️', carX + 32, carY + 2);
+      ctx.restore();
+
+      // 目標字母與狀態卡
+      ctx.save();
+      ctx.fillStyle = '#f8fafc';
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(VIRTUAL_WIDTH / 2 - 200, 320, 400, 105, 18);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 16px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('請唸出推進密碼字母：', VIRTUAL_WIDTH / 2, 345);
+
+      ctx.font = 'bold 44px "Fredoka", sans-serif';
+      ctx.fillStyle = '#ef4444';
+      ctx.fillText(currentTarget.letter, VIRTUAL_WIDTH / 2, 388);
+
+      ctx.font = '600 13px "Noto Sans TC", sans-serif';
+      ctx.fillStyle = '#64748b';
+      ctx.fillText(speechTranscript, VIRTUAL_WIDTH / 2, 414);
+      ctx.restore();
+
+      const mic3Text = isListeningSpeech ? '🛑 停止收音' : '🎤 點擊聲控前進';
+      const mic3Color = isListeningSpeech ? '#ef4444' : '#f59e0b';
+      drawButton(VIRTUAL_WIDTH / 2 - 140, 440, 280, 46, mic3Text, mic3Color, () => {
+        toggleListening();
+      });
+
+      drawButton(VIRTUAL_WIDTH / 2 - 140, 498, 280, 36, '👨‍🏫 老師手動推進 (+10分)', '#059669', () => {
+        raceCarProgress = Math.min(100, raceCarProgress + 10);
+        processAnswer(true);
+      });
+
+      drawQuestionFooterControls(() => speak(currentTarget.letter));
+    }
+
+    function drawNoticeBanner(text) {
+      ctx.save();
+      ctx.fillStyle = '#fef3c7';
+      ctx.strokeStyle = '#fcd34d';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(VIRTUAL_WIDTH / 2 - 320, 175, 640, 26, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#92400e';
+      ctx.font = '600 12px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, VIRTUAL_WIDTH / 2, 188);
+      ctx.restore();
+    }
+
+    function drawWritingGame1() {
+      const caseLabel = writingTargetIsUpper ? '大寫' : '小寫';
+      const targetChar = writingTargetIsUpper ? currentTarget.letter : currentTarget.lowercase;
+
+      drawGameHeader('✏️ 字母筆順描紅板', `請用手指或觸控筆，依循虛線描摹出正確的【 ${caseLabel} 】字母！`);
+
+      // 目標字母大小寫提示標籤
+      ctx.save();
+      ctx.fillStyle = writingTargetIsUpper ? '#eff6ff' : '#fdf2f8';
+      ctx.strokeStyle = writingTargetIsUpper ? '#3b82f6' : '#ec4899';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(writeArea.x + writeArea.w / 2 - 130, 142, 260, 34, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = writingTargetIsUpper ? '#1d4ed8' : '#be185d';
+      ctx.font = 'bold 15px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`目標要求：描摹【 ${caseLabel} 】字母 ${targetChar}`, writeArea.x + writeArea.w / 2, 159);
+      ctx.restore();
+
+      drawFourLineGrid(writeArea.x, writeArea.y, writeArea.w, writeArea.h);
+
+      if (showGuideTemplate || revealBlindAnswer) {
+        ctx.save();
+        ctx.fillStyle = revealBlindAnswer ? 'rgba(34, 197, 94, 0.35)' : 'rgba(203, 213, 225, 0.45)';
+        const fontSize = writingTargetIsUpper ? 200 : (['b','d'].includes(targetChar) ? 180 : 150);
+        const yOffset = writingTargetIsUpper ? 15 : (['a','c','e'].includes(targetChar) ? 35 : 10);
+        ctx.font = `bold ${fontSize}px "Fredoka", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(targetChar, writeArea.x + writeArea.w / 2, writeArea.y + writeArea.h / 2 + yOffset);
+        ctx.restore();
+      }
+
+      renderUserStrokes();
+
+      // 工具控制列（統一順序：1.切換筆刷色 -> 2.清除 -> 3.導引線 -> 4.揭曉解答比對放最後）
+      drawButton(60, 230, 175, 44, '🎨 切換筆刷色', currentColor === '#2563eb' ? '#dc2626' : '#2563eb', () => {
+        currentColor = (currentColor === '#2563eb') ? '#dc2626' : '#2563eb';
+      });
+
+      drawButton(60, 290, 175, 44, '🧹 清除重新寫', '#64748b', () => {
+        drawnStrokes = [];
+      });
+
+      drawButton(60, 350, 175, 44, showGuideTemplate ? '👁️ 隱藏描紅線' : '👁️ 顯示描紅線', '#3b82f6', () => {
+        showGuideTemplate = !showGuideTemplate;
+      });
+
+      drawButton(60, 410, 175, 44, revealBlindAnswer ? '🙈 隱藏解答比對' : '🔍 揭曉解答比對', '#8b5cf6', () => {
+        revealBlindAnswer = !revealBlindAnswer;
+        if (drawnStrokes.length > 0) {
+          const checkResult = verifyWritingAccuracy(targetChar, writingTargetIsUpper);
+          if (checkResult.passed) {
+            processAnswer(true);
+          } else {
+            processAnswer(false);
+          }
+        } else {
+          showFeedbackToast('⚠️ 請先在四線三格內書寫筆劃喔！', false);
+        }
+      });
+
+      drawQuestionFooterControls(() => speak(targetChar));
+    }
+
+    function drawWritingGame2() {
+      // 盲寫記憶考驗：題目穿插大寫與小寫互換
+      const promptIsUpper = !writingTargetIsUpper; // 提示大寫則盲寫小寫，反之亦然
+      const promptChar = promptIsUpper ? currentTarget.letter : currentTarget.lowercase;
+      const targetChar = writingTargetIsUpper ? currentTarget.letter : currentTarget.lowercase;
+      const targetCaseLabel = writingTargetIsUpper ? '大寫' : '小寫';
+      const promptCaseLabel = promptIsUpper ? '大寫' : '小寫';
+
+      drawGameHeader('🧠 字母盲寫記憶考驗', `請看${promptCaseLabel}提示，憑記憶在四線三格內寫出對應的【 ${targetCaseLabel} 】字母！`);
+
+      drawFourLineGrid(writeArea.x, writeArea.y, writeArea.w, writeArea.h);
+
+      // 上方提示橫條
+      ctx.save();
+      ctx.fillStyle = '#eff6ff';
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(writeArea.x, 142, writeArea.w, 34, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#1e40af';
+      ctx.font = 'bold 15px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`題目提供 ${promptCaseLabel}【 ${promptChar} 】➔ 請在右側寫出【 ${targetCaseLabel} 】`, writeArea.x + writeArea.w / 2, 159);
+      ctx.restore();
+
+      if (revealBlindAnswer) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.35)';
+        const fontSize = writingTargetIsUpper ? 200 : (['b','d'].includes(targetChar) ? 180 : 150);
+        const yOffset = writingTargetIsUpper ? 15 : (['a','c','e'].includes(targetChar) ? 35 : 10);
+        ctx.font = `bold ${fontSize}px "Fredoka", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(targetChar, writeArea.x + writeArea.w / 2, writeArea.y + writeArea.h / 2 + yOffset);
+        ctx.restore();
+      }
+
+      renderUserStrokes();
+
+      // 工具控制列（統一順序：1.切換筆刷色 -> 2.清除 -> 3.盲寫提示卡 -> 4.揭曉解答比對放最後）
+      drawButton(60, 215, 175, 42, '🎨 切換筆刷色', currentColor === '#2563eb' ? '#dc2626' : '#2563eb', () => {
+        currentColor = (currentColor === '#2563eb') ? '#dc2626' : '#2563eb';
+      });
+
+      drawButton(60, 270, 175, 42, '🧹 清除手寫', '#64748b', () => {
+        drawnStrokes = [];
+      });
+
+      // 提示卡容器
+      ctx.save();
+      ctx.fillStyle = '#f8fafc';
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(60, 325, 175, 85, 14);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 13px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`題目提示 (${promptCaseLabel})`, 147, 345);
+
+      ctx.fillStyle = '#2563eb';
+      ctx.font = 'bold 44px "Fredoka", sans-serif';
+      ctx.fillText(promptChar, 147, 385);
+      ctx.restore();
+
+      drawButton(60, 425, 175, 44, revealBlindAnswer ? '🙈 隱藏解答比對' : '🔍 揭曉解答比對', '#8b5cf6', () => {
+        revealBlindAnswer = !revealBlindAnswer;
+        if (drawnStrokes.length > 0) {
+          const checkResult = verifyWritingAccuracy(targetChar, writingTargetIsUpper);
+          if (checkResult.passed) {
+            processAnswer(true);
+          } else {
+            processAnswer(false);
+          }
+        } else {
+          showFeedbackToast('⚠️ 請先在四線三格上寫字喔！', false);
+        }
+      });
+
+      drawQuestionFooterControls(() => speak(targetChar));
+    }
+
+    function drawWritingGame3() {
+      drawGameHeader('🧩 字母缺筆補完師', `仔細觀察！這個大寫字母【 ${currentTarget.missingPart.desc} 】，請幫忙補齊！`);
+
+      drawFourLineGrid(writeArea.x, writeArea.y, writeArea.w, writeArea.h);
+
+      // 繪製殘缺的底字
+      ctx.save();
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 14;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      const cx = writeArea.x + writeArea.w / 2;
+      const cy = writeArea.y + writeArea.h / 2;
+
+      if (currentTarget.letter === 'A') {
+        ctx.beginPath();
+        ctx.moveTo(cx - 55, cy + 90);
+        ctx.lineTo(cx, cy - 85);
+        ctx.lineTo(cx + 55, cy + 90);
+        ctx.stroke();
+      } else if (currentTarget.letter === 'B') {
+        ctx.beginPath();
+        ctx.moveTo(cx - 45, cy + 90);
+        ctx.lineTo(cx - 45, cy - 85);
+        ctx.lineTo(cx + 10, cy - 85);
+        ctx.arc(cx + 10, cy - 40, 45, -Math.PI / 2, Math.PI / 2);
+        ctx.lineTo(cx - 45, cy + 5);
+        ctx.stroke();
+      } else if (currentTarget.letter === 'C') {
+        ctx.beginPath();
+        ctx.arc(cx, cy, 75, Math.PI * 0.4, Math.PI * 1.5);
+        ctx.stroke();
+      } else if (currentTarget.letter === 'D') {
+        ctx.beginPath();
+        ctx.moveTo(cx - 35, cy + 90);
+        ctx.lineTo(cx - 35, cy - 85);
+        ctx.stroke();
+      } else if (currentTarget.letter === 'E') {
+        ctx.beginPath();
+        ctx.moveTo(cx + 45, cy - 85);
+        ctx.lineTo(cx - 45, cy - 85);
+        ctx.lineTo(cx - 45, cy + 90);
+        ctx.lineTo(cx + 45, cy + 90);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      if (revealBlindAnswer) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.35)';
+        ctx.font = 'bold 200px "Fredoka", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(currentTarget.letter, writeArea.x + writeArea.w / 2, writeArea.y + writeArea.h / 2 + 15);
+        ctx.restore();
+      }
+
+      renderUserStrokes();
+
+      // 工具控制列（統一順序：1.切換筆刷色 -> 2.清除 -> 3.題目提示 -> 4.揭曉解答比對放最後）
+      drawButton(60, 220, 175, 42, '🎨 切換筆刷色', currentColor === '#2563eb' ? '#dc2626' : '#2563eb', () => {
+        currentColor = (currentColor === '#2563eb') ? '#dc2626' : '#2563eb';
+      });
+
+      drawButton(60, 275, 175, 42, '🧹 清除補筆', '#64748b', () => {
+        drawnStrokes = [];
+      });
+
+      // 缺筆提示說明卡片
+      ctx.save();
+      ctx.fillStyle = '#fffbeb';
+      ctx.strokeStyle = '#fde68a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(60, 330, 175, 75, 14);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#92400e';
+      ctx.font = 'bold 13px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('缺筆提示', 147, 350);
+      ctx.font = '600 12px "Noto Sans TC", sans-serif';
+      ctx.fillText(currentTarget.missingPart.desc, 147, 375);
+      ctx.restore();
+
+      drawButton(60, 420, 175, 44, revealBlindAnswer ? '🙈 隱藏解答比對' : '🔍 揭曉解答比對', '#8b5cf6', () => {
+        revealBlindAnswer = !revealBlindAnswer;
+        if (drawnStrokes.length > 0) {
+          const checkResult = verifyMissingPartAccuracy(currentTarget.letter);
+          if (checkResult.passed) {
+            processAnswer(true);
+          } else {
+            processAnswer(false);
+          }
+        } else {
+          showFeedbackToast('⚠️ 請在畫面上補上缺少的筆劃！', false);
+        }
+      });
+
+      drawQuestionFooterControls(() => speak(currentTarget.letter));
+    }
+
+    // 重新校準的高精度字形辨識演算法（針對大小寫與資源班運筆特徵優化）
+    function verifyWritingAccuracy(targetChar, isUpper) {
+      hitCtx.clearRect(0, 0, writeArea.w, writeArea.h);
+      hitCtx.fillStyle = '#000000';
+
+      const fontSize = isUpper ? 200 : (['b','d'].includes(targetChar) ? 180 : 150);
+      const yOffset = isUpper ? 15 : (['a','c','e'].includes(targetChar) ? 35 : 10);
+      hitCtx.font = `bold ${fontSize}px "Fredoka", sans-serif`;
+      hitCtx.textAlign = 'center';
+      hitCtx.textBaseline = 'middle';
+      hitCtx.fillText(targetChar, writeArea.w / 2, writeArea.h / 2 + yOffset);
+
+      const targetImgData = hitCtx.getImageData(0, 0, writeArea.w, writeArea.h).data;
+
+      // 1. 提取目標字母有效骨架像素集合 (每 8px 採樣一個骨架點，檢測覆蓋度)
+      let targetSkeletonPoints = [];
+      for (let y = 0; y < writeArea.h; y += 8) {
+        for (let x = 0; x < writeArea.w; x += 8) {
+          const idx = (y * writeArea.w + x) * 4;
+          if (targetImgData[idx + 3] > 100) {
+            targetSkeletonPoints.push({ x, y });
+          }
+        }
+      }
+
+      // 2. 收集學生筆劃的所有點
+      let userStrokePoints = [];
+      drawnStrokes.forEach(s => {
+        for (let i = 0; i < s.points.length; i++) {
+          const pt = s.points[i];
+          const localX = Math.round(pt.x - writeArea.x);
+          const localY = Math.round(pt.y - writeArea.y);
+          if (localX >= 0 && localX < writeArea.w && localY >= 0 && localY < writeArea.h) {
+            userStrokePoints.push({ x: localX, y: localY });
+          }
+        }
+      });
+
+      // 筆劃點過少（如只點一下或劃短線）直接判定未完成
+      if (userStrokePoints.length < 18) {
+        showFeedbackToast('💡 筆劃太短或尚未書寫完成喔！', false);
+        return { passed: false };
+      }
+
+      // 3. 檢測學生筆劃的「命中率（Hit Rate）」與「離道率（Out Rate）」
+      // 給予半徑 22px 的寬容度（體諒資源班學生的肌肉控制）
+      let hitPointsCount = 0;
+      let outPointsCount = 0;
+
+      userStrokePoints.forEach(p => {
+        let isHit = false;
+        for (let dx = -22; dx <= 22; dx += 7) {
+          for (let dy = -22; dy <= 22; dy += 7) {
+            const nx = p.x + dx;
+            const ny = p.y + dy;
+            if (nx >= 0 && nx < writeArea.w && ny >= 0 && ny < writeArea.h) {
+              const idx = (ny * writeArea.w + nx) * 4;
+              if (targetImgData[idx + 3] > 60) {
+                isHit = true;
+                break;
+              }
+            }
+          }
+          if (isHit) break;
+        }
+
+        if (isHit) hitPointsCount++;
+        else outPointsCount++;
+      });
+
+      // 4. 檢測目標骨架被筆劃覆蓋的程度（防止只畫部分直線就給分）
+      let coveredSkeletonCount = 0;
+      targetSkeletonPoints.forEach(sp => {
+        const isCovered = userStrokePoints.some(up => {
+          const distSq = (up.x - sp.x) ** 2 + (up.y - sp.y) ** 2;
+          return distSq <= (26 * 26);
+        });
+        if (isCovered) coveredSkeletonCount++;
+      });
+
+      const userTotal = userStrokePoints.length;
+      const hitRatio = hitPointsCount / userTotal;           // 筆跡貼合字形比例
+      const outRatio = outPointsCount / userTotal;           // 隨意塗鴉離道比例
+      const skeletonCoverage = coveredSkeletonCount / targetSkeletonPoints.length; // 字母完整度
+
+      // 判定標準：
+      // 1. 筆跡必須有 60% 以上落在字形允許範圍內
+      // 2. 出界塗鴉亂畫比例低於 40%
+      // 3. 字形骨架覆蓋率必須達到 48% 以上（確保整個字母都有寫完整）
+      const passed = (hitRatio >= 0.60 && outRatio <= 0.40 && skeletonCoverage >= 0.48);
+
+      if (!passed) {
+        if (skeletonCoverage < 0.48) {
+          showFeedbackToast('💡 字母筆劃尚未寫完整喔，請再補齊！', false);
+        } else if (outRatio > 0.40) {
+          showFeedbackToast('💡 出界或塗鴉較多，清除後再試一次！', false);
+        } else {
+          showFeedbackToast('💡 字形形狀不太對喔，再對照一下！', false);
+        }
+      }
+
+      return { passed };
+    }
+
+    // 缺筆補完演算法 (驗證補筆區域)
+    function verifyMissingPartAccuracy(targetLetter) {
+      const cx = writeArea.w / 2;
+      const cy = writeArea.h / 2;
+      let strokePoints = [];
+
+      drawnStrokes.forEach(s => {
+        for (let i = 0; i < s.points.length; i++) {
+          const pt = s.points[i];
+          strokePoints.push({ x: pt.x - writeArea.x, y: pt.y - writeArea.y });
+        }
+      });
+
+      if (strokePoints.length < 8) {
+        showFeedbackToast('💡 筆劃太短，請在缺筆處補上！', false);
+        return { passed: false };
+      }
+
+      // 各字母補劃的核心關鍵區域 (Bounding Box)
+      let hitTargetRegion = false;
+      if (targetLetter === 'A') {
+        // A 缺中間橫線: 應在中央 y 約 cy-5 ~ cy+45, x 約 cx-50 ~ cx+50
+        hitTargetRegion = strokePoints.some(p => p.y >= cy - 10 && p.y <= cy + 45 && Math.abs(p.x - cx) <= 50);
+      } else if (targetLetter === 'B') {
+        // B 缺下肚: 應在右下圓弧 x > cx-20, y > cy+5
+        hitTargetRegion = strokePoints.some(p => p.x >= cx - 20 && p.y >= cy + 5);
+      } else if (targetLetter === 'C') {
+        // C 缺右上弧: 應在右上區域 x > cx, y < cy
+        hitTargetRegion = strokePoints.some(p => p.x >= cx && p.y <= cy + 10);
+      } else if (targetLetter === 'D') {
+        // D 缺右半圓: 應在右側弧線 x > cx-15
+        hitTargetRegion = strokePoints.some(p => p.x >= cx - 15 && Math.abs(p.y - cy) <= 85);
+      } else if (targetLetter === 'E') {
+        // E 缺中間橫線: 應在中心水平區域
+        hitTargetRegion = strokePoints.some(p => Math.abs(p.y - cy) <= 30 && p.x >= cx - 45);
+      }
+
+      if (!hitTargetRegion) {
+        showFeedbackToast('💡 補筆位置不正確喔，請仔細觀察缺少哪一筆！', false);
+      }
+
+      return { passed: hitTargetRegion };
+    }
+
+    function renderUserStrokes() {
+      ctx.save();
+      drawnStrokes.forEach(stroke => {
+        if (stroke.points.length < 2) return;
+        ctx.strokeStyle = stroke.color;
+        ctx.lineWidth = stroke.width;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+        for (let i = 1; i < stroke.points.length; i++) {
+          ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+        }
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
+
+    function processAnswer(isCorrect, isSkipped = false) {
+      if (!hasAnsweredCurrentRound) {
+        hasAnsweredCurrentRound = true;
+        if (isCorrect && !isSkipped) {
+          score += 10;
+          correctCount++;
+          updateScoreUI(10);
+          playTone('correct');
+          createConfettiParticles();
+          showFeedbackToast('🎉 太棒了！首次答對 (+10分)', true);
+        } else {
+          updateScoreUI(0);
+          playTone('wrong');
+          showFeedbackToast('💡 首次答錯 (+0分)！可點擊重聽並按「下一題」', false);
+        }
+      } else {
+        if (isCorrect) {
+          playTone('correct');
+          showFeedbackToast('✓ 練習答對！(非首次作答不計分)', true);
+        } else {
+          playTone('wrong');
+          showFeedbackToast('💡 答錯囉！請點擊「前往下一題」繼續！', false);
+        }
+      }
+    }
+
+    function advanceRound() {
+      if (currentRound < MAX_ROUNDS) {
+        currentRound++;
+        pickNewTarget();
+      } else {
+        isGameOver = true;
+        playTone('fanfare');
+      }
+    }
+
+    function drawAssessmentReport() {
+      const boxW = 640;
+      const boxH = 450;
+      const boxX = (VIRTUAL_WIDTH - boxW) / 2;
+      const boxY = 145;
+
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = 'rgba(0,0,0,0.2)';
+      ctx.shadowBlur = 25;
+      ctx.beginPath();
+      ctx.roundRect(boxX, boxY, boxW, boxH, 28);
+      ctx.fill();
+
+      ctx.fillStyle = '#3b82f6';
+      ctx.beginPath();
+      ctx.roundRect(boxX, boxY, boxW, 80, [28, 28, 0, 0]);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 28px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('🏆 10 題全方位評量成績單', boxX + boxW / 2, boxY + 48);
+
+      let stars = '⭐';
+      let evaluation = '很棒的嘗試！再多練習會更熟悉喔！';
+      if (correctCount >= 8) {
+        stars = '⭐⭐⭐';
+        evaluation = '太厲害了！發音與字形精熟達人！';
+      } else if (correctCount >= 5) {
+        stars = '⭐⭐';
+        evaluation = '表現優異！多讀多寫會更得心應手！';
+      }
+
+      ctx.font = '40px "Fredoka", sans-serif';
+      ctx.fillText(stars, boxX + boxW / 2, boxY + 140);
+
+      ctx.fillStyle = '#1e293b';
+      ctx.font = 'bold 24px "Noto Sans TC", sans-serif';
+      ctx.fillText(`最終評量總分：${score} 分 (滿分 100 分)`, boxX + boxW / 2, boxY + 195);
+
+      ctx.font = '600 18px "Noto Sans TC", sans-serif';
+      ctx.fillStyle = '#64748b';
+      ctx.fillText(`首次答對題數：${correctCount} / ${MAX_ROUNDS} 題 (準確率 ${(correctCount / MAX_ROUNDS * 100).toFixed(0)}%)`, boxX + boxW / 2, boxY + 235);
+
+      ctx.font = 'bold 18px "Noto Sans TC", sans-serif';
+      ctx.fillStyle = '#059669';
+      ctx.fillText(evaluation, boxX + boxW / 2, boxY + 280);
+      ctx.restore();
+
+      drawButton(boxX + 65, boxY + 345, 230, 52, '🔄 再次挑戰 10 題', '#3b82f6', () => {
+        startNewGameSession();
+      });
+
+      drawButton(boxX + 345, boxY + 345, 230, 52, '➔ 挑戰下一個評量', '#10b981', () => {
+        currentGameIndex = (currentGameIndex + 1) % 3;
+        startNewGameSession();
+      });
+    }
+
+    function showFeedbackToast(msg, isSuccess) {
+      messageToast = {
+        text: msg,
+        isSuccess: isSuccess,
+        expireTime: Date.now() + 1500
+      };
+    }
+
+    function drawFeedbackToast() {
+      if (!messageToast) return;
+      const remaining = messageToast.expireTime - Date.now();
+      if (remaining <= 0) {
+        messageToast = null;
+        return;
+      }
+      const alpha = Math.min(1, remaining / 300);
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      const toastW = 440;
+      const toastH = 64;
+      const toastX = (VIRTUAL_WIDTH - toastW) / 2;
+      const toastY = 145;
+
+      ctx.fillStyle = messageToast.isSuccess ? '#10b981' : '#f59e0b';
+      ctx.beginPath();
+      ctx.roundRect(toastX, toastY, toastW, toastH, 32);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 17px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(messageToast.text, toastX + toastW / 2, toastY + toastH / 2);
+      ctx.restore();
+    }
+
+    function createConfettiParticles() {
+      for (let i = 0; i < 35; i++) {
+        particles.push({
+          x: VIRTUAL_WIDTH / 2,
+          y: 280,
+          vx: (Math.random() - 0.5) * 14,
+          vy: (Math.random() - 0.8) * 14,
+          color: ['#f43f5e', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'][Math.floor(Math.random() * 5)],
+          size: Math.random() * 8 + 6,
+          life: 1.0
+        });
+      }
+    }
+
+    function updateAndDrawParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.45;
+        p.life -= 0.02;
+
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+          continue;
+        }
+
+        ctx.save();
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    function getCanvasCoordinates(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = VIRTUAL_WIDTH / rect.width;
+      const scaleY = VIRTUAL_HEIGHT / rect.height;
+
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+      return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY
+      };
+    }
+
+    function handlePointerDown(e) {
+      const pos = getCanvasCoordinates(e);
+
+      // 書寫區域塗鴉偵測
+      if (currentSkill === 'writing') {
+        if (pos.x >= writeArea.x && pos.x <= writeArea.x + writeArea.w &&
+            pos.y >= writeArea.y && pos.y <= writeArea.y + writeArea.h) {
+          isDrawing = true;
+          drawnStrokes.push({
+            color: currentColor,
+            width: 8,
+            points: [{ x: pos.x, y: pos.y }]
+          });
+          return;
+        }
+      }
+
+      // 聽力採購車拖曳
+      if (currentSkill === 'listening' && currentGameIndex === 2 && pos.y >= 470) {
+        cartX = Math.max(50, Math.min(VIRTUAL_WIDTH - cartWidth - 50, pos.x - cartWidth / 2));
+      }
+
+      // 一般按鈕點擊觸發
+      for (let i = clickTargets.length - 1; i >= 0; i--) {
+        const t = clickTargets[i];
+        if (pos.x >= t.x && pos.x <= t.x + t.w && pos.y >= t.y && pos.y <= t.y + t.h) {
+          t.action();
+          break;
+        }
+      }
+    }
+
+    function handlePointerMove(e) {
+      const pos = getCanvasCoordinates(e);
+
+      if (currentSkill === 'writing' && isDrawing) {
+        if (pos.x >= writeArea.x && pos.x <= writeArea.x + writeArea.w &&
+            pos.y >= writeArea.y && pos.y <= writeArea.y + writeArea.h) {
+          const currentStroke = drawnStrokes[drawnStrokes.length - 1];
+          if (currentStroke) {
+            currentStroke.points.push({ x: pos.x, y: pos.y });
+          }
+        }
+      }
+
+      if (currentSkill === 'listening' && currentGameIndex === 2 && pos.y >= 460) {
+        cartX = Math.max(50, Math.min(VIRTUAL_WIDTH - cartWidth - 50, pos.x - cartWidth / 2));
+      }
+    }
+
+    function handlePointerUp() {
+      isDrawing = false;
+    }
+
+    canvas.addEventListener('pointerdown', handlePointerDown);
+    canvas.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      handlePointerDown(e);
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      handlePointerMove(e);
+    }, { passive: false });
+
+    window.addEventListener('touchend', handlePointerUp);
+
+    window.addEventListener('DOMContentLoaded', () => {
+      resizeCanvas();
+      startNewGameSession();
+      draw();
+    });
+  </script>
+</body>
+</html>
