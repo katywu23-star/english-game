@@ -68,7 +68,7 @@
     const VIRTUAL_WIDTH = 940;
     const VIRTUAL_HEIGHT = 650;
 
-    // 5 個核心評量字母題庫（擴充口說辨識諧音別名庫）
+    // 5 個核心評量字母題庫（含多重口語諧音與 Phonics 辨識詞庫）
     const quizData = [
       { 
         letter: "A", lowercase: "a", phonics: "æ", word: "Apple", icon: "🍎",
@@ -97,7 +97,7 @@
       }
     ];
 
-    // 四大核心能力模組
+    // 四大核心能力模組管理
     let currentSkill = 'listening'; // 'listening' | 'speaking' | 'reading' | 'writing'
     let currentGameIndex = 0;       // 0, 1, 2
     let score = 0;
@@ -108,7 +108,7 @@
     let particles = [];
     let animationFrameId = null;
 
-    // 10 題回合評量管理
+    // 10 題回合管理
     const MAX_ROUNDS = 10;
     let currentRound = 1;
     let correctCount = 0;
@@ -141,7 +141,6 @@
     let speechPassed = false;
     let speechSuccessTimer = null;
     let raceCarProgress = 0; // 0 ~ 100%
-    let speechMode = 'recognition';
     let audioStream = null;
     let audioAnalyser = null;
     let micVolumeLevel = 0; // 0 ~ 100
@@ -246,7 +245,6 @@
       window.speechSynthesis.speak(utterance);
     }
 
-    // 初始化麥克風音量感應（免依賴 Google 伺服器的離線/資源班備援神器）
     async function initVolumeSensing() {
       try {
         if (!audioStream) {
@@ -276,10 +274,9 @@
       const avg = sum / buffer.length;
       micVolumeLevel = Math.min(100, Math.round((avg / 128) * 100));
 
-      // 若在發音感應模式或作為辨識備援：音量超過 22 即視為學生有大聲發音
       if (micVolumeLevel > 22) {
         volumeTriggerTimer++;
-        if (volumeTriggerTimer >= 6) { // 持續發音約 0.15 秒即判定成功
+        if (volumeTriggerTimer >= 6) {
           triggerSpeechSuccess(`檢測到大聲發音！(音量 ${micVolumeLevel}%)`);
           volumeTriggerTimer = 0;
           return;
@@ -293,7 +290,6 @@
       }
     }
 
-    // 初始化語音辨識（全新增強型）
     function createSpeechRecognitionInstance() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) return null;
@@ -354,7 +350,6 @@
       const targetLetter = currentTarget.letter.toLowerCase();
       const targetWord = currentTarget.word.toLowerCase();
       
-      // 精確比對或包含目標字母/單字
       if (s === targetLetter || s.startsWith(targetLetter)) return true;
       if (s.includes(targetWord)) return true;
       if (currentTarget.spokenAliases && currentTarget.spokenAliases.some(alias => s.includes(alias.toLowerCase()))) {
@@ -369,14 +364,12 @@
       speechTranscript = msg || "🎉 辨識成功！太棒了！";
       stopListening();
 
-      // 即時推進賽車或得分
       if (currentSkill === 'speaking' && currentGameIndex === 2) {
         raceCarProgress = Math.min(100, raceCarProgress + 25);
       }
 
       processAnswer(true);
 
-      // 1.5 秒後自動前往下一題，給予流暢無卡頓的過關體驗
       if (speechSuccessTimer) clearTimeout(speechSuccessTimer);
       speechSuccessTimer = setTimeout(() => {
         advanceRound();
@@ -996,6 +989,10 @@
     function drawReadingGame1() {
       drawGameHeader('🎴 大小寫翻牌記憶對對碰', '點擊卡片翻開，找出成對的【大寫】與【小寫】字母！(每配對成功 +20分)');
 
+      if (!memoryCards || memoryCards.length === 0) {
+        initMemoryGame();
+      }
+
       const cardW = 120;
       const cardH = 135;
       const gapX = 25;
@@ -1010,7 +1007,6 @@
         const y = startY + row * (cardH + gapY);
 
         if (card.isMatched) {
-          // 已配對成功：呈現淡化打勾狀態
           ctx.save();
           ctx.fillStyle = '#f1f5f9';
           ctx.strokeStyle = '#cbd5e1';
@@ -1083,7 +1079,6 @@
         const [c1, c2] = flippedCards;
 
         if (c1.pairId === c2.pairId && c1.id !== c2.id) {
-          // 配對成功
           setTimeout(() => {
             c1.isMatched = true;
             c2.isMatched = true;
@@ -1104,7 +1099,6 @@
             }
           }, 450);
         } else {
-          // 配對失敗：翻回
           setTimeout(() => {
             c1.isFlipped = false;
             c2.isFlipped = false;
@@ -1120,7 +1114,6 @@
     function drawReadingGame2() {
       drawGameHeader('🔍 字母形體偵探', '仔細觀察目標大寫字母，點選下方正確對應的小寫字母夥伴！');
 
-      // 目標卡片
       const cardW = 320;
       const cardH = 150;
       const cardX = (VIRTUAL_WIDTH - cardW) / 2;
@@ -1145,7 +1138,6 @@
       ctx.fillText(currentTarget.letter, cardX + cardW / 2, cardY + 115);
       ctx.restore();
 
-      // 小寫選項按鈕
       const optW = 125;
       const optH = 100;
       const gap = 25;
@@ -1188,7 +1180,6 @@
 
       drawGameHeader('🚀 字母星際降落', `仔細看提示卡，在降落的隕石中點擊摧毀對應的【 ${askForCase} 】字母！`);
 
-      // 提示看板
       ctx.save();
       ctx.fillStyle = '#eff6ff';
       ctx.strokeStyle = '#3b82f6';
@@ -1214,7 +1205,6 @@
         spawnMeteor();
       }
 
-      // 繪製與更新太空隕石
       for (let i = spaceMeteors.length - 1; i >= 0; i--) {
         const m = spaceMeteors[i];
         m.y += m.vy;
@@ -1329,7 +1319,6 @@
       ctx.font = 'bold 100px "Fredoka", sans-serif';
       ctx.fillText(currentTarget.letter, cardX + cardW / 2, cardY + 140);
 
-      // 音量即時波形條
       if (isListeningSpeech && !speechPassed) {
         ctx.fillStyle = '#e2e8f0';
         ctx.beginPath();
@@ -1353,7 +1342,6 @@
         if (!speechPassed) toggleListening();
       });
 
-      // 教師手動過關按鈕
       drawButton(cardX + 20, cardY + cardH + 74, 380, 36, '👨‍🏫 老師手動核可 (+10分並前往下一題)', '#059669', () => {
         triggerSpeechSuccess('👨‍🏫 教師手動判定通過！');
       });
@@ -1391,7 +1379,6 @@
       ctx.fillStyle = speechPassed ? '#16a34a' : '#1d4ed8';
       ctx.fillText(`${currentTarget.icon} ${currentTarget.word}`, cardX + cardW / 2, cardY + 125);
 
-      // 音量波形條
       if (isListeningSpeech && !speechPassed) {
         ctx.fillStyle = '#cbd5e1';
         ctx.beginPath();
@@ -1440,7 +1427,6 @@
       ctx.roundRect(trackX, trackY, trackW, trackH, 20);
       ctx.fill();
 
-      // 跑道標線
       ctx.strokeStyle = '#cbd5e1';
       ctx.lineWidth = 4;
       ctx.setLineDash([20, 15]);
@@ -1450,15 +1436,12 @@
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // 終點黑白方格旗標示
       ctx.fillStyle = '#f59e0b';
       ctx.fillRect(trackX + trackW - 25, trackY + 10, 15, trackH - 20);
 
-      // 賽車（進度推進）
       const carX = trackX + 15 + (trackW - 110) * (raceCarProgress / 100);
       const carY = trackY + trackH / 2;
 
-      // 噴射火焰動效
       if (isListeningSpeech && micVolumeLevel > 20) {
         ctx.fillStyle = '#ef4444';
         ctx.beginPath();
@@ -1487,7 +1470,6 @@
       ctx.fillText('🏎️', carX + 35, carY + 4);
       ctx.restore();
 
-      // 目標字母與狀態卡
       ctx.save();
       ctx.fillStyle = speechPassed ? '#f0fdf4' : '#f8fafc';
       ctx.strokeStyle = speechPassed ? '#10b981' : '#cbd5e1';
@@ -1548,7 +1530,6 @@
 
       drawGameHeader('✏️ 字母筆順描紅板', `請用手指或觸控筆，依循虛線描摹出正確的【 ${caseLabel} 】字母！`);
 
-      // 目標字母大小寫提示標籤
       ctx.save();
       ctx.fillStyle = writingTargetIsUpper ? '#eff6ff' : '#fdf2f8';
       ctx.strokeStyle = writingTargetIsUpper ? '#3b82f6' : '#ec4899';
@@ -1612,8 +1593,7 @@
     }
 
     function drawWritingGame2() {
-      // 盲寫記憶考驗：題目穿插大寫與小寫互換
-      const promptIsUpper = !writingTargetIsUpper; // 提示大寫則盲寫小寫，反之亦然
+      const promptIsUpper = !writingTargetIsUpper;
       const promptChar = promptIsUpper ? currentTarget.letter : currentTarget.lowercase;
       const targetChar = writingTargetIsUpper ? currentTarget.letter : currentTarget.lowercase;
       const targetCaseLabel = writingTargetIsUpper ? '大寫' : '小寫';
@@ -1623,7 +1603,6 @@
 
       drawFourLineGrid(writeArea.x, writeArea.y, writeArea.w, writeArea.h);
 
-      // 上方提示橫條
       ctx.save();
       ctx.fillStyle = '#eff6ff';
       ctx.strokeStyle = '#3b82f6';
@@ -1663,7 +1642,6 @@
         drawnStrokes = [];
       });
 
-      // 提示卡容器
       ctx.save();
       ctx.fillStyle = '#f8fafc';
       ctx.strokeStyle = '#cbd5e1';
@@ -1705,7 +1683,6 @@
 
       drawFourLineGrid(writeArea.x, writeArea.y, writeArea.w, writeArea.h);
 
-      // 繪製殘缺的底字
       ctx.save();
       ctx.strokeStyle = '#0f172a';
       ctx.lineWidth = 14;
@@ -1769,7 +1746,6 @@
         drawnStrokes = [];
       });
 
-      // 缺筆提示說明卡片
       ctx.save();
       ctx.fillStyle = '#fffbeb';
       ctx.strokeStyle = '#fde68a';
@@ -1804,7 +1780,6 @@
       drawQuestionFooterControls(() => speak(currentTarget.letter));
     }
 
-    // 重新校準的高精度字形辨識演算法（針對大小寫與資源班運筆特徵優化）
     function verifyWritingAccuracy(targetChar, isUpper) {
       hitCtx.clearRect(0, 0, writeArea.w, writeArea.h);
       hitCtx.fillStyle = '#000000';
@@ -1818,7 +1793,6 @@
 
       const targetImgData = hitCtx.getImageData(0, 0, writeArea.w, writeArea.h).data;
 
-      // 1. 提取目標字母有效骨架像素集合 (每 8px 採樣一個骨架點，檢測覆蓋度)
       let targetSkeletonPoints = [];
       for (let y = 0; y < writeArea.h; y += 8) {
         for (let x = 0; x < writeArea.w; x += 8) {
@@ -1829,7 +1803,6 @@
         }
       }
 
-      // 2. 收集學生筆劃的所有點
       let userStrokePoints = [];
       drawnStrokes.forEach(s => {
         for (let i = 0; i < s.points.length; i++) {
@@ -1842,14 +1815,11 @@
         }
       });
 
-      // 筆劃點過少（如只點一下或劃短線）直接判定未完成
       if (userStrokePoints.length < 18) {
         showFeedbackToast('💡 筆劃太短或尚未書寫完成喔！', false);
         return { passed: false };
       }
 
-      // 3. 檢測學生筆劃的「命中率（Hit Rate）」與「離道率（Out Rate）」
-      // 給予半徑 22px 的寬容度（體諒資源班學生的肌肉控制）
       let hitPointsCount = 0;
       let outPointsCount = 0;
 
@@ -1874,7 +1844,6 @@
         else outPointsCount++;
       });
 
-      // 4. 檢測目標骨架被筆劃覆蓋的程度（防止只畫部分直線就給分）
       let coveredSkeletonCount = 0;
       targetSkeletonPoints.forEach(sp => {
         const isCovered = userStrokePoints.some(up => {
@@ -1885,14 +1854,10 @@
       });
 
       const userTotal = userStrokePoints.length;
-      const hitRatio = hitPointsCount / userTotal;           // 筆跡貼合字形比例
-      const outRatio = outPointsCount / userTotal;           // 隨意塗鴉離道比例
-      const skeletonCoverage = coveredSkeletonCount / targetSkeletonPoints.length; // 字母完整度
+      const hitRatio = hitPointsCount / userTotal;
+      const outRatio = outPointsCount / userTotal;
+      const skeletonCoverage = coveredSkeletonCount / targetSkeletonPoints.length;
 
-      // 判定標準：
-      // 1. 筆跡必須有 60% 以上落在字形允許範圍內
-      // 2. 出界塗鴉亂畫比例低於 40%
-      // 3. 字形骨架覆蓋率必須達到 48% 以上（確保整個字母都有寫完整）
       const passed = (hitRatio >= 0.60 && outRatio <= 0.40 && skeletonCoverage >= 0.48);
 
       if (!passed) {
@@ -1908,7 +1873,6 @@
       return { passed };
     }
 
-    // 缺筆補完演算法 (驗證補筆區域)
     function verifyMissingPartAccuracy(targetLetter) {
       const cx = writeArea.w / 2;
       const cy = writeArea.h / 2;
@@ -1926,22 +1890,16 @@
         return { passed: false };
       }
 
-      // 各字母補劃的核心關鍵區域 (Bounding Box)
       let hitTargetRegion = false;
       if (targetLetter === 'A') {
-        // A 缺中間橫線: 應在中央 y 約 cy-5 ~ cy+45, x 約 cx-50 ~ cx+50
         hitTargetRegion = strokePoints.some(p => p.y >= cy - 10 && p.y <= cy + 45 && Math.abs(p.x - cx) <= 50);
       } else if (targetLetter === 'B') {
-        // B 缺下肚: 應在右下圓弧 x > cx-20, y > cy+5
         hitTargetRegion = strokePoints.some(p => p.x >= cx - 20 && p.y >= cy + 5);
       } else if (targetLetter === 'C') {
-        // C 缺右上弧: 應在右上區域 x > cx, y < cy
         hitTargetRegion = strokePoints.some(p => p.x >= cx && p.y <= cy + 10);
       } else if (targetLetter === 'D') {
-        // D 缺右半圓: 應在右側弧線 x > cx-15
         hitTargetRegion = strokePoints.some(p => p.x >= cx - 15 && Math.abs(p.y - cy) <= 85);
       } else if (targetLetter === 'E') {
-        // E 缺中間橫線: 應在中心水平區域
         hitTargetRegion = strokePoints.some(p => Math.abs(p.y - cy) <= 30 && p.x >= cx - 45);
       }
 
@@ -2157,7 +2115,6 @@
     function handlePointerDown(e) {
       const pos = getCanvasCoordinates(e);
 
-      // 書寫區域塗鴉偵測
       if (currentSkill === 'writing') {
         if (pos.x >= writeArea.x && pos.x <= writeArea.x + writeArea.w &&
             pos.y >= writeArea.y && pos.y <= writeArea.y + writeArea.h) {
@@ -2171,12 +2128,10 @@
         }
       }
 
-      // 聽力採購車拖曳
       if (currentSkill === 'listening' && currentGameIndex === 2 && pos.y >= 470) {
         cartX = Math.max(50, Math.min(VIRTUAL_WIDTH - cartWidth - 50, pos.x - cartWidth / 2));
       }
 
-      // 一般按鈕點擊觸發
       for (let i = clickTargets.length - 1; i >= 0; i--) {
         const t = clickTargets[i];
         if (pos.x >= t.x && pos.x <= t.x + t.w && pos.y >= t.y && pos.y <= t.y + t.h) {
