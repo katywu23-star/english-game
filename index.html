@@ -36,11 +36,11 @@
 
   // 1. 5 個字母題庫設定
   const quizData = [
-    { letter: "A", lowercase: "a", word: "Apple", spokenAliases: ["a", "apple", "誒"] },
-    { letter: "B", lowercase: "b", word: "Ball", spokenAliases: ["b", "ball", "逼"] },
-    { letter: "C", lowercase: "c", word: "Cat", spokenAliases: ["c", "cat", "西"] },
-    { letter: "D", lowercase: "d", word: "Dog", spokenAliases: ["d", "dog", "豬"] },
-    { letter: "E", lowercase: "e", word: "Egg", spokenAliases: ["e", "egg", "一"] }
+    { letter: "A", lowercase: "a", word: "Apple" },
+    { letter: "B", lowercase: "b", word: "Ball" },
+    { letter: "C", lowercase: "c", word: "Cat" },
+    { letter: "D", lowercase: "d", word: "Dog" },
+    { letter: "E", lowercase: "e", word: "Egg" }
   ];
 
   // 狀態變數
@@ -63,30 +63,7 @@
   let showOutlineGuide = true;
   let showAnswerOverlay = false;
 
-  // 音效
-  function playTone(type) {
-    try {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-
-      if (type === 'correct') {
-        osc.frequency.setValueAtTime(523.25, audioCtx.currentTime);
-        osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1);
-        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.3);
-      } else if (type === 'wrong') {
-        osc.frequency.setValueAtTime(220, audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.2);
-      }
-    } catch(e) {}
-  }
-
+  // 語音播放工具
   function speak(text) {
     if ('speechSynthesis' in window) {
       const utterance = new SpeechSynthesisUtterance(text);
@@ -95,7 +72,7 @@
     }
   }
 
-  // 標準英文四线格繪製
+  // 標準英文四線格繪製 (精準對齊基準線)
   function drawFourLineGrid(x, y, width, height, textToDraw = null, isGuide = false) {
     const lineSpacing = height / 3;
     const line1 = y;
@@ -105,7 +82,7 @@
 
     ctx.save();
 
-    // 1. 繪製線條
+    // 1. 繪製四線格
     ctx.lineWidth = 2;
     // 頂線 (黑)
     ctx.strokeStyle = '#2c3e50';
@@ -117,7 +94,7 @@
     ctx.beginPath(); ctx.moveTo(x, line2); ctx.lineTo(x + width, line2); ctx.stroke();
     ctx.setLineDash([]);
 
-    // 基準線 (紅粗線)[cite: 1]
+    // 基準线 (紅粗線)
     ctx.strokeStyle = '#e74c3c';
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(x, line3); ctx.lineTo(x + width, line3); ctx.stroke();
@@ -127,10 +104,10 @@
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(x, line4); ctx.lineTo(x + width, line4); ctx.stroke();
 
-    // 2. 繪製文字 (完全依據四線格標準基線繪製)[cite: 1]
+    // 2. 繪製字母 (標準英文基線對齊)
     if (textToDraw) {
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'alphabetical'; // 設定為英文標準基線對齊
+      ctx.textBaseline = 'alphabetical'; // 關鍵對齊屬性
 
       if (isGuide) {
         ctx.fillStyle = 'rgba(52, 152, 219, 0.25)';
@@ -140,7 +117,7 @@
         ctx.font = 'bold 120px "Comic Sans MS", "Fredoka", sans-serif';
       }
 
-      // 將基線精準對齊第三線 (紅色基準線)[cite: 1]
+      // 對齊紅線 (基準線 line3)
       ctx.fillText(textToDraw, x + width / 2, line3);
     }
 
@@ -189,7 +166,7 @@
     });
   }
 
-  // 書寫評量畫面渲染
+  // 書寫評量畫面繪製
   function drawWritingGame() {
     const textTarget = writingTargetIsUpper ? currentTarget.letter : currentTarget.lowercase;
     
@@ -198,10 +175,10 @@
     ctx.textAlign = 'center';
     ctx.fillText(`目標要求：請書寫【 ${writingTargetIsUpper ? '大寫' : '小寫'} 】字母`, 400, 140);
 
-    // 繪製手寫四線三格 Canvas
+    // 四線三格區域
     const gridX = 220, gridY = 170, gridW = 540, gridH = 300;
     
-    // 導引或答案疊加
+    // 導引與透光答案繪製
     const guideText = showOutlineGuide ? textTarget : null;
     drawFourLineGrid(gridX, gridY, gridW, gridH, guideText, true);
 
@@ -227,7 +204,7 @@
     });
     ctx.restore();
 
-    // 左側功能按鈕 (照需求排序)
+    // 左側功能按鈕 (按順序排列)
     drawButton(30, 180, 160, 45, '🎨 切換筆刷色', brushColor, () => {
       brushColor = brushColor === '#2980b9' ? '#e74c3c' : (brushColor === '#e74c3c' ? '#2ecc71' : '#2980b9');
       render();
@@ -247,11 +224,11 @@
       render();
     });
 
-    // 底部控制
+    // 底部按鈕列
     drawBottomBar();
   }
 
-  // 底部控制欄
+  // 底部控制列
   function drawBottomBar() {
     drawButton(240, 520, 150, 45, '🔊 再聽一次', '#3498db', () => speak(currentTarget.letter));
     drawButton(410, 520, 180, 45, '前往下一題 ➔', '#e74c3c', () => {
@@ -259,7 +236,7 @@
     });
   }
 
-  // 按鈕繪製與記錄區域
+  // 按鈕繪製與元件記錄
   function drawButton(x, y, w, h, text, color, onClick, fontSize = '16px') {
     ctx.fillStyle = color;
     ctx.beginPath();
@@ -275,7 +252,7 @@
     clickTargets.push({ x, y, w, h, action: onClick });
   }
 
-  // 筆跡檢測比對
+  // 比對給分邏輯
   function checkWritingScore() {
     if (hasAnsweredCurrentRound) return;
 
@@ -287,8 +264,7 @@
     hasAnsweredCurrentRound = true;
     roundScore = 10;
     score += roundScore;
-    playTone('correct');
-    alert('🎉 筆跡比對成功！非常標準，獲得 10 分！');
+    alert('🎉 比對成功！文字落點標準，獲得 10 分！');
   }
 
   function resetRound() {
@@ -312,7 +288,7 @@
     render();
   }
 
-  // 主渲染循環
+  // 畫面總繪製
   function render() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     clickTargets = [];
@@ -322,22 +298,20 @@
     if (currentSkill === 'writing') {
       drawWritingGame();
     } else {
-      // 其它能力提示
       ctx.fillStyle = '#2c3e50';
       ctx.font = '24px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText(`${currentSkill.toUpperCase()} 模式載入中...`, 400, 300);
+      ctx.fillText(`${currentSkill.toUpperCase()} 評量模式準備中...`, 400, 300);
       drawBottomBar();
     }
   }
 
-  // 事件監聽 (點擊與繪圖)
+  // 繪圖與觸控事件監聽
   canvas.addEventListener('mousedown', (e) => {
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    // 檢查按鈕點擊
     let clicked = false;
     clickTargets.forEach(target => {
       if (x >= target.x && x <= target.x + target.w && y >= target.y && y <= target.y + target.h) {
@@ -346,7 +320,6 @@
       }
     });
 
-    // 手寫板範圍紀錄
     if (!clicked && currentSkill === 'writing' && x >= 220 && x <= 760 && y >= 170 && y <= 470) {
       isDrawing = true;
       currentStroke = [{ x, y }];
@@ -371,7 +344,7 @@
     }
   });
 
-  // 初始化
+  // 初始化啟動
   resetRound();
   render();
 </script>
