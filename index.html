@@ -1,64 +1,147 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <title>英文遊戲</title>
+  <meta charset="UTF-8">
+  <title>英文評量平台測試</title>
+  <style>
+    body {
+      background: #1a252f;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+    }
+    canvas {
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.4);
+      cursor: pointer;
+    }
+  </style>
 </head>
 <body>
-    <!-- 建立一個畫布，讓 ctx 有地方可以繪圖 -->
-    <canvas id="myCanvas" width="800" height="400"></canvas>
 
-    <script>
-        // 設定 Canvas 繪圖環境
-        const canvas = document.getElementById('myCanvas');
-        const ctx = canvas.getContext('2d');
+  <canvas id="gameCanvas" width="800" height="600"></canvas>
 
-        // 把您原本的 drawFourLineGrid 函數貼在這裡
-        function drawFourLineGrid(x, y, width, height, textToDraw, isGuide = false) {
-            const lineSpacing = height / 3;
-            const line1 = y;
-            const line2 = y + lineSpacing;
-            const line3 = y + lineSpacing * 2;
-            const line4 = y + height;
+<script>
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
 
-            ctx.save();
-            ctx.lineWidth = 2;
+  let currentTarget = "A";
+  let isUpper = true;
+  let userStrokes = [];
+  let currentStroke = [];
+  let isDrawing = false;
 
-            ctx.strokeStyle = '#2c3e50';
-            ctx.beginPath(); ctx.moveTo(x, line1); ctx.lineTo(x + width, line1); ctx.stroke();
+  // 繪製標準四線格
+  function drawFourLineGrid(x, y, width, height, letter) {
+    const space = height / 3;
+    ctx.save();
+    
+    // 繪製線條
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#2c3e50';
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + width, y); ctx.stroke(); // 頂線
+    
+    ctx.strokeStyle = '#3498db';
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath(); ctx.moveTo(x, y + space); ctx.lineTo(x + width, y + space); ctx.stroke(); // 中線
+    ctx.setLineDash([]);
+    
+    ctx.strokeStyle = '#e74c3c'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x, y + space * 2); ctx.lineTo(x + width, y + space * 2); ctx.stroke(); // 基準線
+    
+    ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x, y + height); ctx.lineTo(x + width, y + height); ctx.stroke(); // 底線
 
-            ctx.strokeStyle = '#3498db';
-            ctx.setLineDash([8, 6]);
-            ctx.beginPath(); ctx.moveTo(x, line2); ctx.lineTo(x + width, line2); ctx.stroke();
-            ctx.setLineDash([]);
+    // 精準對齊基準線繪製字母
+    if (letter) {
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetical';
+      ctx.fillStyle = 'rgba(52, 152, 219, 0.3)';
+      ctx.font = 'bold 120px "Comic Sans MS", Arial, sans-serif';
+      ctx.fillText(letter, x + width / 2, y + space * 2);
+    }
+    ctx.restore();
+  }
 
-            ctx.strokeStyle = '#e74c3c';
-            ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.moveTo(x, line3); ctx.lineTo(x + width, line3); ctx.stroke();
+  function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            ctx.strokeStyle = '#2c3e50';
-            ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.moveTo(x, line4); ctx.lineTo(x + width, line4); ctx.stroke();
+    // 標題與提示
+    ctx.fillStyle = '#2c3e50';
+    ctx.font = 'bold 22px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`【書寫評量】請書寫：${isUpper ? '大寫 ' + currentTarget : '小寫 ' + currentTarget.toLowerCase()}`, 400, 50);
 
-            if (textToDraw) {
-                const isUpper = (textToDraw === textToDraw.toUpperCase() && textToDraw.match(/[A-Z]/));
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'alphabetical';
+    // 四線格
+    const targetChar = isUpper ? currentTarget : currentTarget.toLowerCase();
+    drawFourLineGrid(150, 150, 500, 280, targetChar);
 
-                if (isGuide) {
-                    ctx.fillStyle = 'rgba(52, 152, 219, 0.25)';
-                    ctx.font = 'bold 110px "Comic Sans MS", "Fredoka", sans-serif';
-                } else {
-                    ctx.fillStyle = 'rgba(46, 204, 113, 0.45)';
-                    ctx.font = 'bold 110px "Comic Sans MS", "Fredoka", sans-serif';
-                }
-                ctx.fillText(textToDraw, x + width / 2, line3);
-            }
-            ctx.restore();
-        }
+    // 繪製使用者筆跡
+    ctx.strokeStyle = '#2980b9';
+    ctx.lineWidth = 8;
+    ctx.lineCap = 'round';
+    userStrokes.concat([currentStroke]).forEach(stroke => {
+      if (stroke.length < 2) return;
+      ctx.beginPath();
+      ctx.moveTo(stroke[0].x, stroke[0].y);
+      for (let i = 1; i < stroke.length; i++) ctx.lineTo(stroke[i].x, stroke[i].y);
+      ctx.stroke();
+    });
 
-        // 呼叫函數測試畫面 (X座標, Y座標, 寬度, 高度, 字母)
-        drawFourLineGrid(50, 50, 400, 150, "Apple");
-    </script>
+    // 按鈕：切換大小寫
+    ctx.fillStyle = '#e67e22';
+    ctx.fillRect(200, 480, 180, 50);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px Arial';
+    ctx.fillText('切換大小寫', 290, 510);
+
+    // 按鈕：清除
+    ctx.fillStyle = '#e74c3c';
+    ctx.fillRect(420, 480, 180, 50);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('清除畫布', 510, 510);
+  }
+
+  // 繪圖與點擊事件
+  canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    if (x >= 200 && x <= 380 && y >= 480 && y <= 530) {
+      isUpper = !isUpper; userStrokes = []; render(); return;
+    }
+    if (x >= 420 && x <= 600 && y >= 480 && y <= 530) {
+      userStrokes = []; render(); return;
+    }
+
+    if (x >= 150 && x <= 650 && y >= 150 && y <= 430) {
+      isDrawing = true;
+      currentStroke = [{x, y}];
+    }
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (!isDrawing) return;
+    const rect = canvas.getBoundingClientRect();
+    currentStroke.push({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    render();
+  });
+
+  canvas.addEventListener('mouseup', () => {
+    if (isDrawing) {
+      isDrawing = false;
+      userStrokes.push(currentStroke);
+      currentStroke = [];
+      render();
+    }
+  });
+
+  render();
+</script>
 </body>
 </html>
